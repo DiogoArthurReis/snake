@@ -3,10 +3,8 @@ import random
 import sqlite3
 import time
 
-# Inicializar Pygame
 pygame.init()
 
-# Configurações da tela e cores
 WIDTH, HEIGHT = 800, 600
 CELL_SIZE = 20
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -17,13 +15,10 @@ GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
 
-# Conexão com o banco de dados SQLite
 conn = sqlite3.connect("ranking.db")
 cursor = conn.cursor()
 
-# Recriar a tabela 'ranking' com estrutura correta
-cursor.execute("DROP TABLE IF EXISTS ranking")
-cursor.execute("""
+cursor.execute(""" 
     CREATE TABLE IF NOT EXISTS ranking (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -32,17 +27,14 @@ cursor.execute("""
 """)
 conn.commit()
 
-# Função para salvar pontuação no ranking
 def save_score(name, score):
     cursor.execute("INSERT INTO ranking (name, score) VALUES (?, ?)", (name, score))
     conn.commit()
 
-# Função para obter os 5 melhores do ranking
 def get_top_scores():
     cursor.execute("SELECT name, score FROM ranking ORDER BY score DESC LIMIT 5")
     return cursor.fetchall()
 
-# Função para exibir o ranking na tela
 def draw_ranking():
     scores = get_top_scores()
     screen.fill(BLACK)
@@ -55,7 +47,6 @@ def draw_ranking():
     pygame.display.flip()
     pygame.time.wait(5000)
 
-# Loop principal do jogo
 def game_loop(player_name):
     clock = pygame.time.Clock()
     snake = [(WIDTH // 2, HEIGHT // 2)]
@@ -70,26 +61,23 @@ def game_loop(player_name):
     while running:
         screen.fill(BLACK)
 
-        # Checar tempo para passar de fase
         elapsed_time = time.time() - start_time
-        if level == 1 and score >= 40 and elapsed_time <= 25:
-            level = 2  # Passar para a próxima fase
-            start_time = time.time()  # Reiniciar o tempo para a próxima fase
-        elif level == 2 and score >= 80 and elapsed_time <= 20:
+        if level == 1 and score >= 50 and elapsed_time <= 25:
+            level = 2  
+            start_time = time.time()  
+        elif level == 2 and score >= 100 and elapsed_time <= 20:
             level = 3
             start_time = time.time()
         elif level == 3 and score >= 150 and elapsed_time <= 15:
-            level = 4  # Passar para a fase bônus
-            start_time = time.time()
-        elif elapsed_time > (25 if level == 1 else 20 if level == 2 else 15):  # Se exceder o tempo, perde o jogo
+            level = 4  
+            start_time = time.time() 
+        elif level != 4 and elapsed_time > (25 if level == 1 else 20 if level == 2 else 15):  
             return score
 
-        # Eventos do jogo
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Movimentação
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP] and direction != (0, CELL_SIZE):
             direction = (0, -CELL_SIZE)
@@ -100,13 +88,11 @@ def game_loop(player_name):
         if keys[pygame.K_RIGHT] and direction != (-CELL_SIZE, 0):
             direction = (CELL_SIZE, 0)
 
-        # Atualizar posição da cobra
         new_head = (snake[0][0] + direction[0], snake[0][1] + direction[1])
         if new_head in snake or not (0 <= new_head[0] < WIDTH and 0 <= new_head[1] < HEIGHT):
-            return score  # Fim do jogo
+            return score 
         snake.insert(0, new_head)
 
-        # Verificar se comeu comida
         if new_head == food:
             score += 10
             food = (random.randint(0, (WIDTH // CELL_SIZE) - 1) * CELL_SIZE,
@@ -115,17 +101,15 @@ def game_loop(player_name):
         else:
             snake.pop()
 
-        # Desenhar comida e cobra
         pygame.draw.rect(screen, RED, (*food, CELL_SIZE, CELL_SIZE))
         for segment in snake:
             pygame.draw.rect(screen, GREEN, (*segment, CELL_SIZE, CELL_SIZE))
 
-        # Mostrar pontuação e nível
         font = pygame.font.Font(None, 35)
-        score_text = font.render(f"Score: {score} Level: {level}", True, WHITE)
+        level_text = f"Level: {level}" if level != 4 else "Level: Bônus"  
+        score_text = font.render(f"Score: {score} {level_text}", True, WHITE)
         screen.blit(score_text, (10, 10))
 
-        # Mostrar tempo restante para passar de fase
         time_remaining = 0
         if level == 1:
             time_remaining = max(0, 25 - int(elapsed_time))
@@ -139,29 +123,26 @@ def game_loop(player_name):
 
         pygame.display.flip()
 
-        if level == 4:  # Fase bônus
-            clock.tick(15 + int(score / 50))  # Fase bônus: aumenta muito a velocidade conforme o score
+        if level == 4: 
+            clock.tick(12 + int(score / 20))  
         else:
-            clock.tick(7 + level * 2)  # Aumentar gradualmente a velocidade
+            clock.tick(7 + level * 2)
 
     return score
 
-# Menu de Game Over
 def game_over_menu(score, player_name):
     save_score(player_name, score)
 
     while True:
         screen.fill(BLACK)
 
-        # Renderizar textos
         font = pygame.font.Font(None, 50)
         game_over_text = font.render("Game Over", True, RED)
-        score_text = font.render(f"Your Score: {score}", True, WHITE)
-        play_again_text = font.render("Press R to Play Again", True, GREEN)
-        ranking_text = font.render("Press T to View Ranking", True, BLUE)
-        quit_text = font.render("Press Q to Quit", True, WHITE)
+        score_text = font.render(f"Sua Pontuação: {score}", True, WHITE)
+        play_again_text = font.render("Pression R para Jogar Novamente", True, GREEN)
+        ranking_text = font.render("Pressione T para Ver o Ranking", True, BLUE)
+        quit_text = font.render("Pressione Q para sair", True, WHITE)
 
-        # Exibir textos na tela
         screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, 50))
         screen.blit(score_text, (WIDTH // 2 - score_text.get_width() // 2, 150))
         screen.blit(play_again_text, (WIDTH // 2 - play_again_text.get_width() // 2, 250))
@@ -170,21 +151,19 @@ def game_over_menu(score, player_name):
 
         pygame.display.flip()
 
-        # Gerenciar eventos
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r:  # Jogar novamente
+                if event.key == pygame.K_r:  
                     return True
-                if event.key == pygame.K_t:  # Ver ranking
+                if event.key == pygame.K_t: 
                     draw_ranking()
-                if event.key == pygame.K_q:  # Sair
+                if event.key == pygame.K_q:
                     pygame.quit()
                     exit()
 
-# Solicitar nome do jogador
 def get_player_name():
     font = pygame.font.Font(None, 50)
     name = ""
@@ -193,6 +172,10 @@ def get_player_name():
 
     while active:
         screen.fill(BLACK)
+
+        instruction_text = font.render("Digite seu nome:", True, WHITE)
+        screen.blit(instruction_text, (WIDTH // 2 - instruction_text.get_width() // 2, HEIGHT // 4))
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -211,7 +194,6 @@ def get_player_name():
         screen.blit(text_surface, (input_box.x + 5, input_box.y + 5))
         pygame.display.flip()
 
-# Função principal
 def main():
     player_name = get_player_name()
     while True:
