@@ -1,245 +1,223 @@
 import pygame
-import time
 import random
-import os
+import sqlite3
+import time
 
-# Inicializando o pygame
+# Inicializar Pygame
 pygame.init()
 
-# Definindo as cores
-branco = (255, 255, 255)
-preto = (0, 0, 0)
-vermelho = (213, 50, 80)
-verde = (0, 255, 0)  # Cor para a maçã
-azul = (0, 0, 255)  # Azul para a cobrinha
-amarelo = (255, 255, 0)  # Cor para os olhos da cobrinha
-marrom = (139, 69, 19)  # Cor para o cabinho da maçã
+# Configurações da tela e cores
+WIDTH, HEIGHT = 800, 600
+CELL_SIZE = 20
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Jogo da Cobrinha")
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+RED = (255, 0, 0)
 
-# Definindo o tamanho da tela
-largura = 600
-altura = 400
+# Conexão com o banco de dados SQLite
+conn = sqlite3.connect("ranking.db")
+cursor = conn.cursor()
 
-# Criando a tela
-tela = pygame.display.set_mode((largura, altura))
-pygame.display.set_caption('Jogo da Cobrinha')
+# Recriar a tabela 'ranking' com estrutura correta
+cursor.execute("DROP TABLE IF EXISTS ranking")
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS ranking (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        score INTEGER NOT NULL
+    )
+""")
+conn.commit()
 
-# Carregar a imagem de fundo
-imagem_fundo = pygame.image.load('assets/imagens/fundo.png')
-imagem_fundo = pygame.transform.scale(imagem_fundo, (largura, altura))
+# Função para salvar pontuação no ranking
+def save_score(name, score):
+    cursor.execute("INSERT INTO ranking (name, score) VALUES (?, ?)", (name, score))
+    conn.commit()
 
-# Definindo o relógio
-relogio = pygame.time.Clock()
+# Função para obter os 5 melhores do ranking
+def get_top_scores():
+    cursor.execute("SELECT name, score FROM ranking ORDER BY score DESC LIMIT 5")
+    return cursor.fetchall()
 
-# Definindo o tamanho do bloco
-tamanho_bloco = 20
-velocidade_inicial = 10
-velocidade = velocidade_inicial
+# Função para exibir o ranking na tela
+def draw_ranking():
+    scores = get_top_scores()
+    screen.fill(BLACK)
+    font = pygame.font.Font(None, 50)
+    title = font.render("Ranking - Top 5", True, WHITE)
+    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 50))
+    for i, (name, score) in enumerate(scores, start=1):
+        text = font.render(f"{i}. {name}: {score}", True, WHITE)
+        screen.blit(text, (WIDTH // 4, 100 + i * 50))
+    pygame.display.flip()
+    pygame.time.wait(5000)
 
-# Fonte para o texto
-fonte_comum = pygame.font.SysFont("bahnschrift", 25)
-fonte_score = pygame.font.SysFont("comicsansms", 35)
-fonte_game_over = pygame.font.SysFont("comicsansms", 60)
-fonte_pontuacao_final = pygame.font.SysFont("comicsansms", 50)
+# Loop principal do jogo
+def game_loop(player_name):
+    clock = pygame.time.Clock()
+    snake = [(WIDTH // 2, HEIGHT // 2)]
+    direction = (0, -CELL_SIZE)
+    food = (random.randint(0, (WIDTH // CELL_SIZE) - 1) * CELL_SIZE,
+            random.randint(0, (HEIGHT // CELL_SIZE) - 1) * CELL_SIZE)
+    score = 0
+    level = 1
+    start_time = time.time()
+    running = True
 
-# Função para exibir a pontuação
-def nossa_pontuacao(pontos):
-    valor = fonte_score.render("Pontuação: " + str(pontos), True, branco)
-    tela.blit(valor, [10, 10])  # Colocando a pontuação no topo da tela, fora do jogo
+    while running:
+        screen.fill(BLACK)
 
-# Função para desenhar a maçã mais realista
-def desenhar_comida(comida_x, comida_y):
-    # Desenhando a maçã como um círculo vermelho
-    pygame.draw.circle(tela, vermelho, (comida_x + tamanho_bloco // 2, comida_y + tamanho_bloco // 2), tamanho_bloco // 2)
-    # Desenhando o cabinho da maçã
-    pygame.draw.rect(tela, marrom, [comida_x + tamanho_bloco // 2 - 2, comida_y - 5, 4, 10])  # Cabinho
-    # Desenhando um sombreamento para dar efeito 3D
-    pygame.draw.circle(tela, (255, 100, 100), (comida_x + 5, comida_y + 5), 6)  # Efeito de brilho
+        # Checar tempo para passar de fase
+        elapsed_time = time.time() - start_time
+        if level == 1 and score >= 40 and elapsed_time <= 25:
+            level = 2  # Passar para a próxima fase
+            start_time = time.time()  # Reiniciar o tempo para a próxima fase
+        elif level == 2 and score >= 80 and elapsed_time <= 20:
+            level = 3
+            start_time = time.time()
+        elif level == 3 and score >= 150 and elapsed_time <= 15:
+            level = 4  # Passar para a fase bônus
+            start_time = time.time()
+        elif elapsed_time > (25 if level == 1 else 20 if level == 2 else 15):  # Se exceder o tempo, perde o jogo
+            return score
 
-# Função que desenha a cobrinha com rosto voltado para a frente
-def nossa_cobrinha(lista_cobrinha, direcao):
-    for i, x in enumerate(lista_cobrinha):
-        if i == len(lista_cobrinha) - 1:  # Cabeça da cobrinha (agora no final da lista)
-            # Desenhando a cabeça com a "cara" voltada para a direção
-            pygame.draw.rect(tela, azul, [x[0], x[1], tamanho_bloco, tamanho_bloco])  # Cabeça
+        # Eventos do jogo
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
-            # Olhos da cobrinha (dois círculos brancos com pupilas pretas)
-            olho_esquerdo_x = x[0] + 5
-            olho_esquerdo_y = x[1] + 5
-            olho_direito_x = x[0] + 12
-            olho_direito_y = x[1] + 5
-            pygame.draw.circle(tela, branco, (olho_esquerdo_x, olho_esquerdo_y), 4)  # Olho esquerdo branco
-            pygame.draw.circle(tela, branco, (olho_direito_x, olho_direito_y), 4)  # Olho direito branco
-            pygame.draw.circle(tela, preto, (olho_esquerdo_x, olho_esquerdo_y), 2)  # Pupila esquerda
-            pygame.draw.circle(tela, preto, (olho_direito_x, olho_direito_y), 2)  # Pupila direita
-            
-            # Boca (um sorriso)
-            pygame.draw.arc(tela, preto, [x[0] + 4, x[1] + 10, 12, 6], 3.14159, 0, 2)  # Boca sorridente
+        # Movimentação
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_UP] and direction != (0, CELL_SIZE):
+            direction = (0, -CELL_SIZE)
+        if keys[pygame.K_DOWN] and direction != (0, -CELL_SIZE):
+            direction = (0, CELL_SIZE)
+        if keys[pygame.K_LEFT] and direction != (CELL_SIZE, 0):
+            direction = (-CELL_SIZE, 0)
+        if keys[pygame.K_RIGHT] and direction != (-CELL_SIZE, 0):
+            direction = (CELL_SIZE, 0)
 
-            # Desenhando o rosto com a direção correta
-            if direcao == "esquerda":
-                pygame.draw.polygon(tela, preto, [(x[0], x[1] + 5), (x[0] + 5, x[1] + 10), (x[0], x[1] + 15)])  # Direção esquerda
-            elif direcao == "direita":
-                pygame.draw.polygon(tela, preto, [(x[0] + tamanho_bloco, x[1] + 5), (x[0] + tamanho_bloco - 5, x[1] + 10), (x[0] + tamanho_bloco, x[1] + 15)])  # Direção direita
-            elif direcao == "cima":
-                pygame.draw.polygon(tela, preto, [(x[0] + 5, x[1]), (x[0] + 10, x[1] + 5), (x[0] + 15, x[1])])  # Direção cima
-            elif direcao == "baixo":
-                pygame.draw.polygon(tela, preto, [(x[0] + 5, x[1] + tamanho_bloco), (x[0] + 10, x[1] + tamanho_bloco - 5), (x[0] + 15, x[1] + tamanho_bloco)])  # Direção baixo
+        # Atualizar posição da cobra
+        new_head = (snake[0][0] + direction[0], snake[0][1] + direction[1])
+        if new_head in snake or not (0 <= new_head[0] < WIDTH and 0 <= new_head[1] < HEIGHT):
+            return score  # Fim do jogo
+        snake.insert(0, new_head)
+
+        # Verificar se comeu comida
+        if new_head == food:
+            score += 10
+            food = (random.randint(0, (WIDTH // CELL_SIZE) - 1) * CELL_SIZE,
+                    random.randint(0, (HEIGHT // CELL_SIZE) - 1) * CELL_SIZE)
 
         else:
-            # Corpo da cobrinha
-            pygame.draw.rect(tela, azul, [x[0], x[1], tamanho_bloco, tamanho_bloco])  # Corpo
+            snake.pop()
 
-# Função para salvar e carregar o ranking
-def carregar_ranking():
-    if not os.path.exists("ranking.txt"):
-        with open("ranking.txt", "w") as f:
-            f.write("0")  # Se não houver ranking, cria o arquivo com a pontuação 0
-    with open("ranking.txt", "r") as f:
-        return int(f.read())
+        # Desenhar comida e cobra
+        pygame.draw.rect(screen, RED, (*food, CELL_SIZE, CELL_SIZE))
+        for segment in snake:
+            pygame.draw.rect(screen, GREEN, (*segment, CELL_SIZE, CELL_SIZE))
 
-def salvar_ranking(pontos):
-    ranking = carregar_ranking()
-    if pontos > ranking:
-        with open("ranking.txt", "w") as f:
-            f.write(str(pontos))
+        # Mostrar pontuação e nível
+        font = pygame.font.Font(None, 35)
+        score_text = font.render(f"Score: {score} Level: {level}", True, WHITE)
+        screen.blit(score_text, (10, 10))
 
-# Função para exibir a mensagem de "Game Over"
-def mostrar_game_over(pontos):
-    tela.fill(preto)
+        # Mostrar tempo restante para passar de fase
+        time_remaining = 0
+        if level == 1:
+            time_remaining = max(0, 25 - int(elapsed_time))
+        elif level == 2:
+            time_remaining = max(0, 20 - int(elapsed_time))
+        elif level == 3:
+            time_remaining = max(0, 15 - int(elapsed_time))
 
-    # Mensagem "Game Over"
-    texto_game_over = fonte_game_over.render("GAME OVER", True, vermelho)
-    tela.blit(texto_game_over, [largura / 2 - texto_game_over.get_width() / 2, altura / 3])
+        time_text = font.render(f"Time Left: {time_remaining}s", True, WHITE)
+        screen.blit(time_text, (WIDTH - 200, 10))
 
-    # Pontuação final
-    texto_pontuacao = fonte_pontuacao_final.render(f"Sua Pontuação: {pontos}", True, branco)
-    tela.blit(texto_pontuacao, [largura / 2 - texto_pontuacao.get_width() / 2, altura / 2])
+        pygame.display.flip()
 
-    # Instruções para reiniciar ou sair
-    texto_reiniciar = fonte_comum.render("Pressione C para jogar novamente ou Q para sair", True, amarelo)
-    tela.blit(texto_reiniciar, [largura / 2 - texto_reiniciar.get_width() / 2, altura * 3 / 4])
+        if level == 4:  # Fase bônus
+            clock.tick(15 + int(score / 50))  # Fase bônus: aumenta muito a velocidade conforme o score
+        else:
+            clock.tick(7 + level * 2)  # Aumentar gradualmente a velocidade
 
-    pygame.display.update()
+    return score
 
-# Função principal do jogo
-def jogo():
-    global velocidade
+# Menu de Game Over
+def game_over_menu(score, player_name):
+    save_score(player_name, score)
 
-    fim_de_jogo = False
-    game_over = False
+    while True:
+        screen.fill(BLACK)
 
-    # Coordenadas iniciais da cobrinha
-    x1 = largura / 2
-    y1 = altura / 2
+        # Renderizar textos
+        font = pygame.font.Font(None, 50)
+        game_over_text = font.render("Game Over", True, RED)
+        score_text = font.render(f"Your Score: {score}", True, WHITE)
+        play_again_text = font.render("Press R to Play Again", True, GREEN)
+        ranking_text = font.render("Press T to View Ranking", True, BLUE)
+        quit_text = font.render("Press Q to Quit", True, WHITE)
 
-    x1_mudanca = 0
-    y1_mudanca = 0
+        # Exibir textos na tela
+        screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, 50))
+        screen.blit(score_text, (WIDTH // 2 - score_text.get_width() // 2, 150))
+        screen.blit(play_again_text, (WIDTH // 2 - play_again_text.get_width() // 2, 250))
+        screen.blit(ranking_text, (WIDTH // 2 - ranking_text.get_width() // 2, 350))
+        screen.blit(quit_text, (WIDTH // 2 - quit_text.get_width() // 2, 450))
 
-    direcao = "direita"  # Direção inicial da cobrinha
+        pygame.display.flip()
 
-    # Lista que armazena os segmentos da cobrinha
-    cobrinha_lista = []
-    comprimento_cobrinha = 1
+        # Gerenciar eventos
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:  # Jogar novamente
+                    return True
+                if event.key == pygame.K_t:  # Ver ranking
+                    draw_ranking()
+                if event.key == pygame.K_q:  # Sair
+                    pygame.quit()
+                    exit()
 
-    # Coordenadas da comida
-    comida_x = round(random.randrange(0, largura - tamanho_bloco) / tamanho_bloco) * tamanho_bloco
-    comida_y = round(random.randrange(0, altura - tamanho_bloco) / tamanho_bloco) * tamanho_bloco
+# Solicitar nome do jogador
+def get_player_name():
+    font = pygame.font.Font(None, 50)
+    name = ""
+    input_box = pygame.Rect(WIDTH // 4, HEIGHT // 2, WIDTH // 2, 50)
+    active = True
 
-    while not fim_de_jogo:
+    while active:
+        screen.fill(BLACK)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    if name:
+                        return name
+                elif event.key == pygame.K_BACKSPACE:
+                    name = name[:-1]
+                else:
+                    name += event.unicode
 
-        while game_over:
-            pontos = comprimento_cobrinha - 1
-            mostrar_game_over(pontos)
+        pygame.draw.rect(screen, WHITE, input_box, 2)
+        text_surface = font.render(name, True, WHITE)
+        screen.blit(text_surface, (input_box.x + 5, input_box.y + 5))
+        pygame.display.flip()
 
-            for evento in pygame.event.get():
-                if evento.type == pygame.QUIT:
-                    fim_de_jogo = True
-                    game_over = False
-                if evento.type == pygame.KEYDOWN:
-                    if evento.key == pygame.K_q:
-                        fim_de_jogo = True
-                        game_over = False
-                    if evento.key == pygame.K_c:
-                        jogo()
+# Função principal
+def main():
+    player_name = get_player_name()
+    while True:
+        score = game_loop(player_name)
+        if not game_over_menu(score, player_name):
+            break
 
-        for evento in pygame.event.get():
-            if evento.type == pygame.QUIT:
-                fim_de_jogo = True
-            if evento.type == pygame.KEYDOWN:
-                if evento.key == pygame.K_LEFT:
-                    x1_mudanca = -tamanho_bloco
-                    y1_mudanca = 0
-                    direcao = "esquerda"
-                elif evento.key == pygame.K_RIGHT:
-                    x1_mudanca = tamanho_bloco
-                    y1_mudanca = 0
-                    direcao = "direita"
-                elif evento.key == pygame.K_UP:
-                    y1_mudanca = -tamanho_bloco
-                    x1_mudanca = 0
-                    direcao = "cima"
-                elif evento.key == pygame.K_DOWN:
-                    y1_mudanca = tamanho_bloco
-                    x1_mudanca = 0
-                    direcao = "baixo"
-
-        # Movimentação e teletransporte
-        x1 += x1_mudanca
-        y1 += y1_mudanca
-
-        # Teletransportando a cobrinha para o lado oposto ao colidir com a tela
-        if x1 >= largura:
-            x1 = 0
-        elif x1 < 0:
-            x1 = largura - tamanho_bloco
-        if y1 >= altura:
-            y1 = 0
-        elif y1 < 0:
-            y1 = altura - tamanho_bloco
-
-        # Exibindo o fundo com a imagem carregada
-        tela.blit(imagem_fundo, (0, 0))
-
-        # Desenhando a comida (maçã mais realista)
-        desenhar_comida(comida_x, comida_y)
-
-        # Desenhando a cobrinha (com rosto voltado para a frente)
-        nossa_cobrinha(cobrinha_lista, direcao)
-
-        nossa_pontuacao(comprimento_cobrinha - 1)
-
-        pygame.display.update()
-
-        # Verificando se a cabeça da cobrinha encostou na comida
-        if x1 == comida_x and y1 == comida_y:  # Se a cabeça da cobrinha encostou na comida
-            comida_x = round(random.randrange(0, largura - tamanho_bloco) / tamanho_bloco) * tamanho_bloco
-            comida_y = round(random.randrange(0, altura - tamanho_bloco) / tamanho_bloco) * tamanho_bloco
-            comprimento_cobrinha += 1  # A cobrinha cresce
-
-            # Aumento de velocidade controlado
-            if (comprimento_cobrinha - 1) % 10 == 0:  # A cada 10 pontos, aumenta a velocidade
-                if velocidade < 30:  # Limite máximo de velocidade
-                    velocidade += 1
-
-        # Adicionando a nova posição da cabeça da cobrinha no final da lista (invertendo a ordem)
-        cabeça_cobrinha = []
-        cabeça_cobrinha.append(x1)
-        cabeça_cobrinha.append(y1)
-        cobrinha_lista.append(cabeça_cobrinha)
-
-        # Verificando se a cobrinha bateu em si mesma
-        if len(cobrinha_lista) > comprimento_cobrinha:
-            del cobrinha_lista[0]
-
-        for x in cobrinha_lista[:-1]:
-            if x == cabeça_cobrinha:
-                game_over = True
-
-        relogio.tick(velocidade)
-
-    salvar_ranking(comprimento_cobrinha - 1)
-    pygame.quit()
-    quit()
-
-# Iniciar o jogo
-jogo()
+if __name__ == "__main__":
+    main()
